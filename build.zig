@@ -1,5 +1,7 @@
 const std = @import("std");
 
+const PhpAbi = enum { php80, php84 };
+
 const test_extensions = [_]struct { name: []const u8, dir: []const u8 }{
     .{ .name = "php_zig_hello", .dir = "test/hello" },
     .{ .name = "php_zig_arrays", .dir = "test/arrays" },
@@ -16,12 +18,21 @@ const test_extensions = [_]struct { name: []const u8, dir: []const u8 }{
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+    const php_abi = b.option(
+        PhpAbi,
+        "php_abi",
+        "PHP module API to build against (php80 = 20200930, php84 = 20240924)",
+    ) orelse .php84;
+
+    const build_options = b.addOptions();
+    build_options.addOption(PhpAbi, "php_abi", php_abi);
 
     const mod = b.addModule("php", .{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
         .optimize = optimize,
     });
+    mod.addOptions("build_options", build_options);
 
     // Cross-platform linking: on Windows the extension links php8ts.lib from
     // <php_path>/dev (defaults to the bundled win-bin dev pack).
@@ -47,23 +58,23 @@ pub fn build(b: *std.Build) void {
 
     const test_step = b.step("test", "Run tests");
 
-    const mod_tests = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/root.zig"),
-            .target = target,
-            .optimize = optimize,
-        }),
+    const mod_tests_module = b.createModule(.{
+        .root_source_file = b.path("src/root.zig"),
+        .target = target,
+        .optimize = optimize,
     });
+    mod_tests_module.addOptions("build_options", build_options);
+    const mod_tests = b.addTest(.{ .root_module = mod_tests_module });
     const run_mod_tests = b.addRunArtifact(mod_tests);
     test_step.dependOn(&run_mod_tests.step);
 
-    const abi_tests = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/abi.zig"),
-            .target = target,
-            .optimize = optimize,
-        }),
+    const abi_tests_module = b.createModule(.{
+        .root_source_file = b.path("src/abi.zig"),
+        .target = target,
+        .optimize = optimize,
     });
+    abi_tests_module.addOptions("build_options", build_options);
+    const abi_tests = b.addTest(.{ .root_module = abi_tests_module });
     const run_abi_tests = b.addRunArtifact(abi_tests);
     test_step.dependOn(&run_abi_tests.step);
 

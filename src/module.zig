@@ -5,8 +5,17 @@ const zval = types.zval;
 const zend_type = types.zend_type;
 const zend_execute_data = types.zend_execute_data;
 
-pub const BUILD_ID = if (builtin.os.tag == .windows) "API20240924,TS,VS16" else "API20240924,TS";
-pub const ZEND_API = 20240924;
+pub const Abi = @import("build_options").php_abi;
+
+pub const BUILD_ID = switch (Abi) {
+    .php80 => if (builtin.os.tag == .windows) "API20200930,TS,VS16" else "API20200930,TS",
+    .php84 => if (builtin.os.tag == .windows) "API20240924,TS,VS16" else "API20240924,TS",
+};
+
+pub const ZEND_API: u32 = switch (Abi) {
+    .php80 => 20200930,
+    .php84 => 20240924,
+};
 
 pub const zend_internal_arg_info = extern struct {
     name: [*:0]const u8,
@@ -14,14 +23,23 @@ pub const zend_internal_arg_info = extern struct {
     default_value: ?[*:0]const u8,
 };
 
-pub const zend_function_entry = extern struct {
-    fname: ?[*:0]const u8,
-    handler: ?*const fn (?*zend_execute_data, ?*zval) callconv(.c) void,
-    arg_info: ?[*]const zend_internal_arg_info,
-    num_args: u32,
-    flags: u32,
-    frameless_function_infos: ?*const anyopaque,
-    doc_comment: ?[*:0]const u8,
+pub const zend_function_entry = switch (Abi) {
+    .php80 => extern struct {
+        fname: ?[*:0]const u8,
+        handler: ?*const fn (?*zend_execute_data, ?*zval) callconv(.c) void,
+        arg_info: ?[*]const zend_internal_arg_info,
+        num_args: u32,
+        flags: u32,
+    },
+    .php84 => extern struct {
+        fname: ?[*:0]const u8,
+        handler: ?*const fn (?*zend_execute_data, ?*zval) callconv(.c) void,
+        arg_info: ?[*]const zend_internal_arg_info,
+        num_args: u32,
+        flags: u32,
+        frameless_function_infos: ?*const anyopaque = null,
+        doc_comment: ?[*:0]const u8 = null,
+    },
 };
 
 pub const zend_module_entry = extern struct {
@@ -107,8 +125,6 @@ pub const function_entry_end = zend_function_entry{
     .arg_info = null,
     .num_args = 0,
     .flags = 0,
-    .frameless_function_infos = null,
-    .doc_comment = null,
 };
 
 // Send-mode and variadic markers packed into the high bits of
@@ -176,4 +192,12 @@ pub fn createModule(opts: ModuleOptions) zend_module_entry {
         .module_number = 0,
         .build_id = BUILD_ID,
     };
+}
+
+test "zend_function_entry matches the selected PHP ABI" {
+    const expected: usize = switch (Abi) {
+        .php80 => 32,
+        .php84 => 48,
+    };
+    try @import("std").testing.expectEqual(expected, @sizeOf(zend_function_entry));
 }
